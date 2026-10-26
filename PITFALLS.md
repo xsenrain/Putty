@@ -146,12 +146,38 @@
 
 ### P-011 构建工具链缺失时不要下「编译通过」结论
 
-- **现象**：`cmake --version`、`gcc --version`、`cl` 均 `command not found`。
-- **原因**：开发机未安装 CMake 与 C 编译器（或未加入 PATH）。
-- **影响**：**任何未经编译的改动都可能有语法错误**，不能声称「已通过」。
-- **解法**：先按 `BUILD.md` 装工具链；无法安装时，在 commit 信息与 `DEVLOG.md` 中**明确写「未编译验证」**。
-- **状态**：已验证
+- **现象**：`cmake --version`、`gcc --version`、`cl` 在 Git Bash 里均 `command not found`。
+- **原因**：开发机**实际装有** VS 18 Community（MSVC 14.51）与 VS 自带 CMake 4.3.1，但它们**不在默认 PATH** 中——VS 环境必须靠 `vcvars64.bat` 注入，CMake 在 `%VS%\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\`。
+- **影响**：容易误判为「机器上没有编译器」而放弃构建；更危险的是**未经编译就声称改动可用**。
+- **解法**：
+  - 先确认是否只是 PATH 问题：
+    ```bash
+    ls "/c/Program Files/Microsoft Visual Studio/18/Community/VC/Tools/MSVC/*/bin/Hostx64/x64/cl.exe"
+    ls "/c/Program Files/Microsoft Visual Studio/18/Community/Common7/IDE/CommonExtensions/Microsoft/CMake/CMake/bin/cmake.exe"
+    ```
+  - 真正无法构建时，在 commit 信息与 `DEVLOG.md` 中**明确写「未编译验证」**。
+- **状态**：已验证（2026-10-26 复查，之前「未安装」的结论有误，已更正）
 - **记录日期**：2026-10-26
+
+### P-016 VS 18 + CMake 4.x 用 VS 生成器报「找不到 C 编译器」
+
+- **现象**：
+  ```
+  -- Building for: Visual Studio 18 2026
+  -- The C compiler identification is unknown
+  CMake Error at CMakeLists.txt:2 (project): No CMAKE_C_COMPILER could be found.
+  ```
+- **原因**：VS 18（2026）的 C++ 工具集未注册给 CMake 的 VS 生成器；CMake 版本为 `4.3.1-msvc1`。
+- **影响**：按「常识」直接 `cmake -S . -B build` 会失败，容易误以为源码有问题。
+- **解法**：改用 **Ninja + vcvars64**：
+  ```bat
+  call "C:\Program Files\Microsoft Visual Studio\18\Community\VC\Auxiliary\Build\vcvars64.bat"
+  cmake -S . -B ..\putty-build -G Ninja -DCMAKE_BUILD_TYPE=Release
+  ```
+  或换 `-G "Visual Studio 17 2022" -A x64`。
+- **状态**：已验证（2026-10-26 实测报错）
+- **记录日期**：2026-10-26
+
 
 ---
 
