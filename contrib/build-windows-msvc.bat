@@ -4,7 +4,7 @@ rem  PuTTY Windows build script (MSVC + Ninja)
 rem  Verified working on: VS 18 Community (MSVC 14.51) + CMake 4.3
 rem
 rem  Usage:
-rem    tools\build-windows-msvc.bat [build_dir]
+rem    contrib\build-windows-msvc.bat [build_dir]
 rem
 rem  Why this script exists (see PITFALLS.md P-016..P-019):
 rem    1. CMake's "Visual Studio 18 2026" generator cannot find cl.exe
