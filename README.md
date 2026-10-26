@@ -16,7 +16,7 @@
 |------|------|-----------|
 | [AGENTS.md](AGENTS.md) | 智能体/协作者入职须知：项目现状、目录地图、**提交规范**、禁止事项 | **动手改代码前必读** |
 | [BUILD.md](BUILD.md) | 编译指南：Windows / Linux / macOS 构建步骤、CMake 选项、排错表 | 要把代码编出来时 |
-| [PITFALLS.md](PITFALLS.md) | 误点避坑清单：16 条已知坑 + 待观察项 | **动手前扫一遍**，省几小时 |
+| [PITFALLS.md](PITFALLS.md) | 误点避坑清单：20 条已知坑 + 待观察项 | **动手前扫一遍**，省几小时 |
 | [DEVLOG.md](DEVLOG.md) | 二次开发日志：每次改动的时间线、提交 hash、遗留问题 | 想知道「现在到哪一步了」 |
 
 > 核心约定：**一次任务 = 一次 commit = 一次推送**；踩到新坑必须录入 `PITFALLS.md`。
@@ -34,7 +34,8 @@ PuTTY 是一款免费、开源的 SSH / Telnet 客户端，最初由 Simon Tatha
 | 版本 | **0.85**（见 `LATEST.VER`） |
 | 语言 | C（450 个 `.c` / 89 个 `.h`） |
 | 许可证 | MIT（见 `LICENCE`） |
-| 构建系统 | CMake |
+| 构建系统 | CMake（≥ 3.7），C99 |
+| 构建状态 | **Windows ✅ 已验证**（VS 18 / MSVC 19.51 + CMake 4.3，467 步全通过）｜Linux / macOS 待验证 |
 | 上游地址 | <https://git.tartarus.org/simon/putty.git> |
 | 官方网站 | <https://www.chiark.greenend.org.uk/~sgtatham/putty/> |
 | 官方文档 | <https://the.earth.li/~sgtatham/putty/latest/htmldoc/> |
@@ -122,19 +123,38 @@ cmake --build ../putty-build
 
 推荐 **out-of-source** 构建（产物生成在源码目录之外），避免构建产物污染仓库。
 
-### Windows（MSVC，推荐 Ninja）
+### Windows（MSVC + Ninja）✅ 已验证
 
-在 **x64 Native Tools Command Prompt for VS** 中执行：
+**推荐用仓库自带脚本**，已在 VS 18 + CMake 4.3 上完整编译通过（467 步，0 报错）：
+
+```bat
+contrib\build-windows-msvc.bat               :: 输出到 ..\putty-build
+contrib\build-windows-msvc.bat D:\my-build   :: 指定输出目录
+```
+
+手工等价步骤（在 **x64 Native Tools Command Prompt for VS** 中）：
 
 ```bat
 call vcvars64.bat
-cmake -S . -B ..\putty-build -G Ninja -DCMAKE_BUILD_TYPE=Release
-cmake --build ..\putty-build
+
+:: 关键：vcvars 若查不到 Windows SDK，rc.exe / kernel32.lib 会缺失
+set KITS=C:\Program Files (x86)\Windows Kits\10
+set SDKVER=10.0.26100.0
+set PATH=%KITS%\bin\%SDKVER%\x64;%PATH%
+set INCLUDE=%KITS%\Include\%SDKVER%\um;%KITS%\Include\%SDKVER%\ucrt;%KITS%\Include\%SDKVER%\shared;%INCLUDE%
+set LIB=%KITS%\Lib\%SDKVER%\um\x64;%KITS%\Lib\%SDKVER%\ucrt\x64;%LIB%
+
+cmake -S . -B ..\putty-build -G Ninja -DCMAKE_BUILD_TYPE=Release ^
+      -DCMAKE_RC_COMPILER="C:/Program Files (x86)/Windows Kits/10/bin/10.0.26100.0/x64/rc.exe" ^
+      -DCMAKE_MT="C:/Program Files (x86)/Windows Kits/10/bin/10.0.26100.0/x64/mt.exe"
+cmake --build ..\putty-build -- -j 1
 ```
 
-产物：`..\putty-build\putty.exe`、`pscp.exe`、`psftp.exe`、`plink.exe`、`puttygen.exe`、`pageant.exe`
+两个必踩的点：`CMAKE_RC_COMPILER` 只能用**正斜杠**（P-018）；构建务必加 `-j 1`（并行 Ninja 偶发卡死，P-019）。
 
-也可以直接用 VS 生成器，但**注意**：本机实测 `-G "Visual Studio 18 2026"` 会报 `No CMAKE_C_COMPILER could be found`（VS 18 工具集未注册给 CMake），此时请改用上面的 Ninja 方式，或换 `-G "Visual Studio 17 2022" -A x64`。
+> 不要用 `-G "Visual Studio 18 2026"`：VS 18 工具集未注册给 CMake，会报 `No CMAKE_C_COMPILER could be found`（P-016）。
+
+产物：`..\putty-build\putty.exe`、`pscp.exe`、`psftp.exe`、`plink.exe`、`puttygen.exe`、`pageant.exe`
 
 ### Linux
 
