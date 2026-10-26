@@ -178,6 +178,67 @@
 - **状态**：已验证（2026-10-26 实测报错）
 - **记录日期**：2026-10-26
 
+### P-017 `vcvars64.bat` 跑完仍缺 `rc.exe` / `mt.exe` / `kernel32.lib`
+
+- **现象**：
+  1. 链接时报 `RC Pass 1: command "rc /fo ..." failed ... no such file or directory`
+  2. 补上 rc 后变成 `LINK : fatal error LNK1104: 无法打开文件"kernel32.lib"`
+- **原因**：`vcvars64.bat` 依赖 `reg.exe` 查询 Windows SDK 的安装路径。当 `reg.exe` 被安全策略/沙箱拦截时，脚本**静默跳过** SDK 初始化，`PATH` 里没有 `rc.exe`/`mt.exe`，`INCLUDE`/`LIB` 里没有 SDK 头文件与库——但**编译器本身正常**，所以 `cl.exe` 能找到，只在链接阶段暴露。
+- **影响**：报错位置具有迷惑性（像是链接器/库缺失），实际是环境初始化不完整。
+- **解法**：手工补三条环境变量（版本号按 `C:\Program Files (x86)\Windows Kits\10\bin` 下实际目录调整）：
+  ```bat
+  set KITS=C:\Program Files (x86)\Windows Kits\10
+  set SDKVER=10.0.26100.0
+  set PATH=%KITS%\bin\%SDKVER%\x64;%PATH%
+  set INCLUDE=%KITS%\Include\%SDKVER%\um;%KITS%\Include\%SDKVER%\ucrt;%KITS%\Include\%SDKVER%\shared;%INCLUDE%
+  set LIB=%KITS%\Lib\%SDKVER%\um\x64;%KITS%\Lib\%SDKVER%\ucrt\x64;%LIB%
+  ```
+  验证：`where rc` 与 `where mt` 都应输出路径。
+- **状态**：已验证（2026-10-26 实际踩坑并修复）
+- **记录日期**：2026-10-26
+
+### P-018 `CMAKE_RC_COMPILER` 传反斜杠路径导致 CMake 解析报错
+
+- **现象**：
+  ```
+  CMake Error at .../CMakeRCCompiler.cmake:1 (set):
+    Syntax error ... when parsing string
+      C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64\rc.exe
+    Invalid character escape '\P'.
+  ```
+- **原因**：CMake 把 `-DCMAKE_RC_COMPILER=` 的原始值写进 `.cmake` 文件，反斜杠被当作转义符（`\P` 非法）。
+- **影响**：配置阶段就失败，且报错指向生成的文件，不易联想到命令行参数。
+- **解法**：`CMAKE_RC_COMPILER` 与 `CMAKE_MT` 一律用**正斜杠**：
+  ```bat
+  -DCMAKE_RC_COMPILER="C:/Program Files (x86)/Windows Kits/10/bin/10.0.26100.0/x64/rc.exe"
+  ```
+- **状态**：已验证（2026-10-26 实测）
+- **记录日期**：2026-10-26
+
+### P-019 并行 Ninja 偶发卡死：`cl.exe` 空转、无产物、日志不推进
+
+- **现象**：构建停在 `[456/467]` 后完全不动，`cl.exe` 进程存活 10 分钟以上但目标目录没有任何新文件，`.ninja_log` 也不追加。
+- **原因**：未完全确定。疑与安全软件/沙箱对编译子进程的实时扫描有关（并行时多个 cl 同时触发扫描更容易卡）。
+- **影响**：看起来像「编译很久」，实际是死锁，干等无意义。
+- **判断方法**：`find <build> -name "*.obj" -newermt "-3 minutes"` 无输出即卡死，不要干等。
+- **解法**：杀掉后单线程增量重跑（已完成的步骤会命中缓存，很快）：
+  ```bash
+  taskkill /F /IM cl.exe /T
+  cmake --build <build_dir> -- -j 1
+  ```
+  本仓库的一键脚本默认已带 `-j 1`。
+- **状态**：已验证（2026-10-26 实际卡死，`-j 1` 后 14 步补齐并成功）
+- **记录日期**：2026-10-26
+
+### P-020 Windows 批处理脚本里写中文注释会被 GBK 解析成乱码
+
+- **现象**：`.bat` 运行时刷出 `'ram' 不是内部或外部命令`、`'nv' 不是内部或外部命令`，以及一堆 `系统找不到指定的路径`。
+- **原因**：文件以 UTF-8 保存，`cmd.exe` 按系统代码页（中文 Windows 为 GBK/936）解析，多字节字符会吞掉相邻字节，把 `rem` 注释切断成乱命令。
+- **影响**：脚本行为完全错乱，且报错信息与真实逻辑无关。
+- **解法**：`.bat` 内**只用 ASCII**（注释也用英文）；确需中文时另存为 GBK 编码，或改用 `.ps1`（UTF-8 BOM）。
+- **状态**：已验证（2026-10-26 实测）
+- **记录日期**：2026-10-26
+
 
 ---
 
