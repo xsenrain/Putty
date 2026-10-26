@@ -12,14 +12,159 @@
 
 **首次接触本仓库，请按此顺序阅读：**
 
-| 文档 | 内容 | 什么时候看 |
+| 位置 | 内容 | 什么时候看 |
 |------|------|-----------|
+| **[如何编译](#如何编译)**（本文下一节） | 环境准备、Windows/Linux/macOS 构建命令、编译成功验证、三个致命坑 | **只想把代码编出来 → 看这节就够** |
 | [AGENTS.md](AGENTS.md) | 智能体/协作者入职须知：项目现状、目录地图、**提交规范**、禁止事项 | **动手改代码前必读** |
-| [BUILD.md](BUILD.md) | 编译指南：Windows / Linux / macOS 构建步骤、CMake 选项、排错表 | 要把代码编出来时 |
+| [BUILD.md](BUILD.md) | 编译详解：完整选项表、产物清单、逐条排错对照、实测记录 | 上面那节不够用时 |
 | [PITFALLS.md](PITFALLS.md) | 误点避坑清单：20 条已知坑 + 待观察项 | **动手前扫一遍**，省几小时 |
 | [DEVLOG.md](DEVLOG.md) | 二次开发日志：每次改动的时间线、提交 hash、遗留问题 | 想知道「现在到哪一步了」 |
 
 > 核心约定：**一次任务 = 一次 commit = 一次推送**；踩到新坑必须录入 `PITFALLS.md`。
+
+---
+
+## 如何编译
+
+> 本节是在本仓库**实测通过**的构建方式（Windows 已完整验证）。完整选项表、产物清单与排错对照见 **[BUILD.md](BUILD.md)**。
+
+### 0. 环境准备
+
+| 平台 | 需要安装 | 说明 |
+|------|---------|------|
+| **Windows** | Visual Studio 2019+（安装时勾选「**使用 C++ 的桌面开发**」）+ Windows 10/11 SDK | 会一并提供 `cl.exe`、`rc.exe`、`mt.exe`、`kernel32.lib`。**无需任何第三方库**，加密与压缩均为源码自带实现 |
+| **Linux** | `build-essential cmake pkg-config` | 需要 GUI 再装 `libgtk-3-dev libx11-dev`；只做命令行工具可不装 GTK |
+| **macOS** | `xcode-select --install`，再 `brew install cmake pkg-config gtk+3` | |
+| **通用** | **CMake ≥ 3.7** | 源码声明 `cmake_minimum_required(VERSION 3.7...3.28)`，语言标准 **C99** |
+
+### 1. Windows：一条命令（推荐）
+
+```bat
+cd C:\path\to\putty-0.85
+contrib\build-windows-msvc.bat                  :: 产物输出到 ..\putty-build
+contrib\build-windows-msvc.bat D:\my-build      :: 也可指定输出目录
+```
+
+脚本自动完成三件事：
+
+1. 定位 Visual Studio 并调用 `vcvars64.bat` 导入 MSVC 环境；
+2. **手动补齐 Windows SDK 的 `PATH` / `INCLUDE` / `LIB`** —— 这一步是能否编译成功的关键，原因见下方「三个致命坑」；
+3. 以 Ninja 单线程方式构建到目标目录。
+
+**实测结果**：Visual Studio 18 Community（MSVC 19.51）+ CMake 4.3.1 + Ninja，**467 个编译步骤全部通过，0 报错**。
+
+### 2. Windows：手工等价步骤
+
+在 **x64 Native Tools Command Prompt for VS** 中执行（与脚本等价）：
+
+```bat
+call vcvars64.bat
+
+:: 关键：vcvars 若查不到 SDK，rc.exe / mt.exe / kernel32.lib 全部缺失
+set KITS=C:\Program Files (x86)\Windows Kits\10
+set SDKVER=10.0.26100.0
+set PATH=%KITS%\bin\%SDKVER%\x64;%PATH%
+set INCLUDE=%KITS%\Include\%SDKVER%\um;%KITS%\Include\%SDKVER%\ucrt;%KITS%\Include\%SDKVER%\shared;%INCLUDE%
+set LIB=%KITS%\Lib\%SDKVER%\um\x64;%KITS%\Lib\%SDKVER%\ucrt\x64;%LIB%
+
+cmake -S . -B ..\putty-build -G Ninja -DCMAKE_BUILD_TYPE=Release ^
+      -DCMAKE_RC_COMPILER="C:/Program Files (x86)/Windows Kits/10/bin/10.0.26100.0/x64/rc.exe" ^
+      -DCMAKE_MT="C:/Program Files (x86)/Windows Kits/10/bin/10.0.26100.0/x64/mt.exe"
+
+cmake --build ..\putty-build -- -j 1
+```
+
+> `SDKVER` 换成你自己 `C:\Program Files (x86)\Windows Kits\10\bin\` 下的版本号目录。`CMAKE_RC_COMPILER` 结尾必须是 `.exe` 且路径用**正斜杠**。
+
+### 3. Linux
+
+```bash
+# Debian / Ubuntu
+sudo apt install build-essential cmake pkg-config libgtk-3-dev libx11-dev
+
+cmake -S . -B ../putty-build -DCMAKE_BUILD_TYPE=Release
+cmake --build ../putty-build -j$(nproc)
+sudo cmake --build ../putty-build --target install   # 可选：安装
+```
+
+服务器无 GTK 时加 `-DPUTTY_GTK_VERSION=NONE`，只构建 `plink` / `pscp` / `psftp` 等命令行工具。
+
+> Unix 上若希望 `pterm` 能记录登录信息（写 `/var/run/utmp`、`/var/log/wtmp`），需手动为其设置 setuid/setgid 权限，CMake 安装步骤不会自动处理。
+
+### 4. macOS
+
+```bash
+xcode-select --install
+brew install cmake pkg-config gtk+3
+
+cmake -S . -B ../putty-build -DCMAKE_BUILD_TYPE=Release
+cmake --build ../putty-build -j$(sysctl -n hw.ncpu)
+```
+
+### 5. 验证是否真的编译成功
+
+```bat
+putty-build\plink.exe -V
+```
+
+正常输出（本仓库实测）：
+
+```
+plink: Release 0.85
+Build platform: 64-bit x86 Windows
+Compiler: Visual Studio, _MSC_VER=1951, _MSC_FULL_VER=195136257
+```
+
+可执行文件应全部生成，Windows 上的参考大小：
+
+| 产物 | 大小 | 用途 |
+|------|------|------|
+| `putty.exe` | ~1.1 MB | SSH/Telnet 图形客户端 |
+| `psftp.exe` | ~779 KB | 交互式 SFTP 客户端 |
+| `pscp.exe` | ~770 KB | 命令行 SCP/SFTP 复制 |
+| `plink.exe` | ~765 KB | 命令行 SSH 客户端 |
+| `puttytel.exe` | ~505 KB | 仅 Telnet 的精简客户端 |
+| `pterm.exe` | ~433 KB | 独立终端（不含 SSH） |
+| `puttygen.exe` | ~400 KB | 密钥生成与管理 |
+| `pageant.exe` | ~374 KB | SSH 认证代理 |
+
+### 6. 三个致命坑（编译失败几乎都是它们）
+
+| 现象 | 真实原因 | 解法 |
+|------|---------|------|
+| `No CMAKE_C_COMPILER could be found` | CMake 的 `Visual Studio 18 2026` 生成器拿不到 VS 18 工具集 | **不要用 VS 生成器**，改用 Ninja + `vcvars64.bat`（P-016） |
+| `RC Pass 1 ... no such file or directory`，或 `LNK1104: 无法打开 kernel32.lib` | `vcvars64.bat` 靠 `reg.exe` 查 SDK 路径；`reg.exe` 被安全策略拦住时，`PATH`/`INCLUDE`/`LIB` 静默为空 | 按第 2 节手动补 SDK 三个环境变量（P-017） |
+| `Invalid character escape '\P'` | `-DCMAKE_RC_COMPILER` 用反斜杠，被 CMake 写进配置文件当成转义符 | 路径改成**正斜杠**（P-018） |
+
+另外两个偶发问题：并行构建可能卡在某一个 `cl.exe` 上不返回（占 CPU 但无产物）→ 加 `-j 1`（P-019）；`.bat` 脚本里写中文注释会被 GBK 解析成乱码 → 脚本只写 ASCII（P-020）。
+
+### 7. 常用 CMake 选项
+
+| 选项 | 默认 | 说明 |
+|------|------|------|
+| `PUTTY_GTK_VERSION` | `ANY` | `ANY` / `3` / `2` / `1` / `NONE`，`NONE` 关闭 GTK GUI |
+| `PUTTY_IPV6` | `ON` | IPv6 支持 |
+| `PUTTY_DEBUG` | `OFF` | 调试构建 |
+| `PUTTY_FUZZING` | `OFF` | fuzzing 目标 |
+| `PUTTY_COVERAGE` | `OFF` | 覆盖率插桩 |
+| `PUTTY_COMPRESS_SCROLLBACK` | `ON` | 回滚缓冲压缩 |
+
+### 8. 构建文档（可选）
+
+文档由 `doc/` 下的 Halibut（`.but`）源文件生成，需先安装 [Halibut](https://www.chiark.greenend.org.uk/~sgtatham/halibut/)：
+
+```bash
+cmake --build ../putty-build --target doc
+```
+
+### 9. 其他常见错误
+
+| 报错 | 解法 |
+|------|------|
+| `Could NOT find PkgConfig` | 装 `pkg-config` |
+| `gtk+-3.0 not found` | 装 `libgtk-3-dev`，或加 `-DPUTTY_GTK_VERSION=NONE` |
+| `CMakeCache.txt` 出现在 `git status` | 你做了 in-source 构建，删除该文件并改用 `-B ../putty-build` |
+| 改了 `doc/*.but` 但文档没变 | 文档需要 Halibut 才能重新生成 |
 
 ---
 
@@ -95,119 +240,6 @@ PuTTY 是一款免费、开源的 SSH / Telnet 客户端，最初由 Simon Tatha
 | 加跳板机 / 代理逻辑 | `proxy/` |
 | 加文件传输功能 | `psftp.c`、`pscp.c`、`ssh/` 中的 SFTP 子系统 |
 | 做自动化命令行 | `plink`（后端复用 `cmdline.c` + `ssh/`） |
-
----
-
-## 编译帮助
-
-> 本节为速查版。完整说明（选项表、产物清单、排错对照表、实测记录）见 **[BUILD.md](BUILD.md)**。
-
-### 前置条件
-
-| 项 | 要求 |
-|----|------|
-| CMake | **≥ 3.7**（`CMakeLists.txt` 声明 `3.7...3.28`） |
-| C 标准 | **C99** |
-| 编译器 | Windows：MSVC 2019+ 或 MinGW-w64；Linux/macOS：gcc / clang |
-| GTK | **可选**（仅 Unix GUI 需要；缺失时只构建命令行工具） |
-| Halibut | 可选（仅生成文档需要） |
-
-Windows 构建**无需任何外部第三方库**，加密与压缩均为自带实现。
-
-### 快速开始
-
-```bash
-cmake -S . -B ../putty-build
-cmake --build ../putty-build
-```
-
-推荐 **out-of-source** 构建（产物生成在源码目录之外），避免构建产物污染仓库。
-
-### Windows（MSVC + Ninja）✅ 已验证
-
-**推荐用仓库自带脚本**，已在 VS 18 + CMake 4.3 上完整编译通过（467 步，0 报错）：
-
-```bat
-contrib\build-windows-msvc.bat               :: 输出到 ..\putty-build
-contrib\build-windows-msvc.bat D:\my-build   :: 指定输出目录
-```
-
-手工等价步骤（在 **x64 Native Tools Command Prompt for VS** 中）：
-
-```bat
-call vcvars64.bat
-
-:: 关键：vcvars 若查不到 Windows SDK，rc.exe / kernel32.lib 会缺失
-set KITS=C:\Program Files (x86)\Windows Kits\10
-set SDKVER=10.0.26100.0
-set PATH=%KITS%\bin\%SDKVER%\x64;%PATH%
-set INCLUDE=%KITS%\Include\%SDKVER%\um;%KITS%\Include\%SDKVER%\ucrt;%KITS%\Include\%SDKVER%\shared;%INCLUDE%
-set LIB=%KITS%\Lib\%SDKVER%\um\x64;%KITS%\Lib\%SDKVER%\ucrt\x64;%LIB%
-
-cmake -S . -B ..\putty-build -G Ninja -DCMAKE_BUILD_TYPE=Release ^
-      -DCMAKE_RC_COMPILER="C:/Program Files (x86)/Windows Kits/10/bin/10.0.26100.0/x64/rc.exe" ^
-      -DCMAKE_MT="C:/Program Files (x86)/Windows Kits/10/bin/10.0.26100.0/x64/mt.exe"
-cmake --build ..\putty-build -- -j 1
-```
-
-两个必踩的点：`CMAKE_RC_COMPILER` 只能用**正斜杠**（P-018）；构建务必加 `-j 1`（并行 Ninja 偶发卡死，P-019）。
-
-> 不要用 `-G "Visual Studio 18 2026"`：VS 18 工具集未注册给 CMake，会报 `No CMAKE_C_COMPILER could be found`（P-016）。
-
-产物：`..\putty-build\putty.exe`、`pscp.exe`、`psftp.exe`、`plink.exe`、`puttygen.exe`、`pageant.exe`
-
-### Linux
-
-```bash
-# Debian / Ubuntu 依赖
-sudo apt install build-essential cmake pkg-config libgtk-3-dev libx11-dev
-
-cmake -S . -B ../putty-build -DCMAKE_BUILD_TYPE=Release
-cmake --build ../putty-build -j$(nproc)
-sudo cmake --build ../putty-build --target install   # 可选：安装
-```
-
-服务器无 GTK 时，加 `-DPUTTY_GTK_VERSION=NONE`，仅构建 `plink` / `pscp` / `psftp` 等命令行工具。
-
-> Unix 上若希望 `pterm` 能记录登录信息（写入 `/var/run/utmp`、`/var/log/wtmp`），需手动设置 setuid/setgid 权限，CMake 安装步骤不会自动处理。
-
-### macOS
-
-```bash
-xcode-select --install
-brew install cmake pkg-config gtk+3
-
-cmake -S . -B ../putty-build -DCMAKE_BUILD_TYPE=Release
-cmake --build ../putty-build -j$(sysctl -n hw.ncpu)
-```
-
-### 常用 CMake 选项
-
-| 选项 | 默认 | 说明 |
-|------|------|------|
-| `PUTTY_GTK_VERSION` | `ANY` | `ANY` / `3` / `2` / `1` / `NONE`，`NONE` 关闭 GTK GUI |
-| `PUTTY_IPV6` | `ON` | IPv6 支持 |
-| `PUTTY_DEBUG` | `OFF` | 调试构建 |
-| `PUTTY_FUZZING` | `OFF` | fuzzing 目标 |
-| `PUTTY_COVERAGE` | `OFF` | 覆盖率插桩 |
-| `PUTTY_COMPRESS_SCROLLBACK` | `ON` | 回滚缓冲压缩 |
-
-### 常见错误
-
-| 报错 | 解法 |
-|------|------|
-| `No CMAKE_C_COMPILER could be found` | 改用 Ninja + `vcvars64.bat`，或换 VS 2022 生成器 |
-| `Could NOT find PkgConfig` | 装 `pkg-config` |
-| `gtk+-3.0 not found` | 装 `libgtk-3-dev`，或加 `-DPUTTY_GTK_VERSION=NONE` |
-| `CMakeCache.txt` 出现在 `git status` | 你做了 in-source 构建，删掉并改用 `-B ../putty-build` |
-
-### 构建文档（可选）
-
-文档由 `doc/` 下的 Halibut（`.but`）源文件生成，需先安装 [Halibut](https://www.chiark.greenend.org.uk/~sgtatham/halibut/)：
-
-```bash
-cmake --build ../putty-build --target doc
-```
 
 ---
 
