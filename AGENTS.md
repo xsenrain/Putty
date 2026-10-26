@@ -15,7 +15,7 @@
 | 代码规模 | 约 **48,700 行** C 代码（450 个 `.c` + 89 个 `.h`），722 个文件 |
 | 构建 | CMake 3.7+，C99 |
 | 许可证 | MIT —— **改动后可闭源商用，但必须保留 `LICENCE` 与版权声明** |
-| 当前状态 | 仓库已初始化、README/文档体系已建立；**编译尚未验证**；尚未开始任何代码改动 |
+| 当前状态 | 仓库已初始化、文档体系已建立、**Windows 编译已验证通过**（467 步，产物 `plink -V` 显示 `Release 0.85`）；尚未开始任何功能代码改动 |
 | 最重要的一条规则 | **一次任务 = 一次 commit，改完即推送 GitHub** |
 
 ---
@@ -42,14 +42,16 @@
 - [x] 与远程初始提交合并（`ddc348d`）
 - [x] README 重写：项目简介、组件表、目录结构、二开切入点（`6da9870`）
 - [x] 二次开发日志 `DEVLOG.md`（`6a1c40b`）
-- [x] 智能体协作规范、避坑清单、编译指南（本批提交）
+- [x] 智能体协作规范、避坑清单、编译指南（`5708bd3` / `1c099f5` / `6282f8a`）
+- [x] **Windows 编译跑通**：`contrib/build-windows-msvc.bat` 467/467 步通过，产物版本 `Release 0.85`（`f38f79b`）
 
 ### 未完成 / 已知缺口
 
-- [ ] **编译未验证**：当前开发机未安装 CMake 与 C 编译器
+- [ ] Linux / macOS 构建路径未实测
 - [ ] 未建立 `dev` 开发分支，未打 `upstream-0.85` 基线标签
 - [ ] 二次开发方向未确定（候选：界面改造 / 跳板机 / 会话管理 / 加密套件）
 - [ ] 尚未有任何功能代码改动
+- [ ] 测试套件（`test/` 下 35 个 Python 脚本）入口未确认
 
 ---
 
@@ -165,10 +167,12 @@ git push origin main      # 或当前开发分支
 | Git | ✅ 2.55.0.windows.3 | 正常 |
 | GitHub 凭据 | ✅ 已缓存（credential.helper=manager） | 可非交互 push |
 | GitHub CLI `gh` | ❌ 未安装 | 无法命令行建 PR / 管 Issue，需网页操作 |
-| CMake | ❌ 未安装 | **无法本地构建** |
-| C 编译器（MSVC / gcc） | ❌ 未安装 | **无法本地构建** |
+| Visual Studio | ✅ VS 18 Community，MSVC 14.51（不在 PATH，需 `vcvars64.bat`） | 可编译 |
+| CMake | ✅ 4.3.1-msvc1，位于 `%VS%\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\` | 可配置构建 |
+| Ninja | ✅ VS 自带，同目录 `Ninja\ninja.exe` | 推荐生成器 |
+| Windows SDK | ✅ 10.0.26100.0（`C:\Program Files (x86)\Windows Kits\10`） | 需手动补 PATH/INCLUDE/LIB，见 P-017 |
 
-> 在这些工具补齐之前，任何「编译通过」的结论都不可信。补齐后请更新本表并在 `DEVLOG.md` 记录。
+> **直接构建**：`contrib\build-windows-msvc.bat`（脚本已处理上述所有环境细节）。**不要**用 `-G "Visual Studio 18 2026"`（P-016），**不要**省略 `-j 1`（P-019）。
 
 ---
 

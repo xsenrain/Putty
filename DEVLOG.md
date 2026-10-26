@@ -142,5 +142,67 @@
 3. 测试套件入口未确认（`test/` 下 35 个 Python 脚本，依赖 `testcrypt`）
 4. 二次开发方向仍未确定
 
+## 2026-10-26 编译验证通过（Windows / MSVC）
+
+### 目标
+
+回答「怎样才能编译成功」——把 POSIX 环境下的摸索变成一条可复现、可脚本化的路径。
+
+### 结论：三条命令搞定
+
+```bat
+contrib\build-windows-msvc.bat
+```
+
+即在 **x64 Native Tools Command Prompt** 中：`vcvars64` → 补 SDK 的 `PATH/INCLUDE/LIB` → `cmake -G Ninja`（`CMAKE_RC_COMPILER` 用正斜杠）→ `cmake --build -- -j 1`。
+
+### 排障过程（四层，逐层剥）
+
+| # | 现象 | 真正原因 | 处理 |
+|---|------|---------|------|
+| 1 | `No CMAKE_C_COMPILER could be found` | CMake 4.x 的 `Visual Studio 18 2026` 生成器未拿到 VS 18 工具集 | 改用 Ninja（P-016） |
+| 2 | `RC Pass 1 ... no such file or directory` | `vcvars64.bat` 靠 `reg.exe` 查 SDK，`reg.exe` 被安全策略拦截 → SDK 未初始化 | 手动把 SDK `bin\<ver>\x64` 加进 PATH（P-017） |
+| 3 | `LNK1104: 无法打开文件"kernel32.lib"` | 同一原因，`LIB` / `INCLUDE` 里没有 SDK 路径 | 手动补 `LIB` 与 `INCLUDE`（P-017） |
+| 4 | `Invalid character escape '\P'` | `-DCMAKE_RC_COMPILER` 传了反斜杠，被写进 `.cmake` 当转义符 | 改用正斜杠（P-018） |
+
+另外遇到一次并行构建死锁（停在 456/467，`cl.exe` 空转 10 分钟无产物），用 `-j 1` 增量重跑解决（P-019）；写批处理时中文注释被 GBK 解析成乱码，改纯 ASCII（P-020）。
+
+### 验证结果
+
+```
+$ plink.exe -V
+plink: Release 0.85
+Build platform: 64-bit x86 Windows
+Compiler: Visual Studio, _MSC_VER=1951, _MSC_FULL_VER=195136257
+```
+
+| 产物 | 大小 |
+|------|------|
+| putty.exe | 1.1 MB |
+| psftp.exe / pscp.exe | 779 / 770 KB |
+| plink.exe | 765 KB |
+| puttytel.exe | 505 KB |
+| pterm.exe | 433 KB |
+| puttygen.exe | 400 KB |
+| pageant.exe | 374 KB |
+
+构建输出目录：`Desktop\putty-build`（out-of-source，未污染仓库）。
+
+### 交付物
+
+| 文件 | 说明 | 提交 |
+|------|------|------|
+| `contrib/build-windows-msvc.bat` | 一键构建脚本：自动定位 VS / SDK、注入环境、调用 Ninja，默认 `-j 1` | `f38f79b` |
+| `BUILD.md` | 3.0 一键脚本、3.1 手工等价步骤、3.2 为何不用 VS 生成器；第 11 节实测记录 | `f38f79b` |
+| `PITFALLS.md` | 新增 P-017 ~ P-020 | `cd4266a` |
+| `README.md` | Windows 构建改为已验证路径 + 构建状态行 | `3056769` |
+
+### 遗留问题
+
+1. Linux / macOS 路径未实测（`pkg-config` + GTK3 相关分支未验证）
+2. 测试套件入口未确认（`testcrypt` 已随构建产出，Python 脚本如何调用待查）
+3. `-j 1` 的死锁只是绕过，未找到根因（疑安全软件实时扫描）
+
 <!-- 新增日志请从下方追加，保持时间倒序或正序一致即可 -->
+
 
