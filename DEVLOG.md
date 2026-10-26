@@ -242,6 +242,39 @@ Compiler: Visual Studio, _MSC_VER=1951, _MSC_FULL_VER=195136257
 
 ---
 
+## 2026-10-26 记录「三平台中只有 Windows 验证过」这一事实
+
+### 目标
+
+被问到「Linux 版本与 macOS 版本都编译成功了吗」，明确答案是**否**。此前文档虽有一处「Linux / macOS 待验证」，但散落在表格一角，容易被忽略；一旦有人照抄 Linux/macOS 命令失败，会误判为仓库问题。本次把这件事固化成一条编号坑（P-021），并在文档显著位置标注。
+
+### 改动范围
+
+| 文件 | 改动 | 提交 |
+|------|------|------|
+| `PITFALLS.md` | 新增 **P-021**（只有 Windows 验证过）；待观察清单新增 **O-005 / O-006**（Linux / macOS 构建可行性） | 本次提交 |
+| `README.md` | 构建状态行改为「Linux / macOS ⚠️ 未验证」并链接 P-021；§3 Linux、§4 macOS 各加一段醒目警告；坑条目计数 20 → 21 | 本次提交 |
+| `DEVLOG.md` | 本条目 | 本次提交 |
+
+### P-021 记录的核心内容
+
+- **事实**：三平台中只有 Windows 实测通过；Linux / macOS 命令是**按上游 CMake 结构推导**的
+- **为什么验证不了**：开发机为 Windows，MSVC 只能产出 PE；**`wsl.exe` 被安全策略列入程序黑名单**（`PROGRAM BLOCKED BY SECURITY POLICY`，不可绕过，需用户在「安全中心 → 命令安全 → 程序黑名单」移除）；本机无 Docker、无 VirtualBox
+- **约定**：任何结论都要分平台标注状态，禁止用「编译通过」笼统覆盖三平台；某平台未经实测不得标 ✅
+- **附带认知**：PuTTY 无原生 macOS 界面，macOS 走 GTK3 + X11，需 XQuartz
+
+### 验证方式
+
+- 状态判断基于本机实测：`wsl.exe --status` 被安全策略拦截、`docker` 命令不存在、VirtualBox 路径不存在、`.github/` 目录不存在（无 CI）
+- 文档改动经 grep 核对：P-021 已列入「三、构建相关」，O-005/O-006 已进待观察表，README 计数与链接一致
+
+### 遗留问题
+
+1. **Linux / macOS 仍未编译过**——需 GitHub Actions（`ubuntu-latest` / `macos-latest`）或用户的 Linux/Mac 机器
+2. 若将来配 CI 并通过，需把 README §3/§4 的警告改为 ✅、在本文追加日志、并关闭 O-005 / O-006
+
+---
+
 <!-- 新增日志请从下方追加，保持时间倒序或正序一致即可 -->
 
 

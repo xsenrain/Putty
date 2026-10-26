@@ -239,6 +239,22 @@
 - **状态**：已验证（2026-10-26 实测）
 - **记录日期**：2026-10-26
 
+### P-021 只有 Windows 构建验证过，Linux / macOS 至今未编译
+
+- **现象**：README 与 BUILD.md 里 Linux / macOS 的命令看着完整，但**从未真正执行过**；被问「三个平台都编成功了吗」时，答案只有 Windows 是 ✅。
+- **原因**：
+  1. 开发机是 Windows，MSVC 工具链再全也只能产出 PE 文件，编不出 ELF / Mach-O；
+  2. **WSL 被安全策略禁用**——`wsl.exe` 在程序黑名单中，执行报 `PROGRAM BLOCKED BY SECURITY POLICY`，且明确不可绕过（需用户在「安全中心 → 命令安全 → 程序黑名单」自行移除）；
+  3. 本机未安装 Docker，也没有 VirtualBox 等虚拟机。
+- **影响**：文档里 Linux / macOS 段落属于**按上游 CMake 结构推导**，可能与实际不符（例如 GTK3 包名、X11 依赖、`pkg-config` 缺失时的失败点）。若有人照抄失败，会误以为是仓库问题。
+- **正确做法**：
+  - 任何结论里**分开标注平台状态**，不要用「编译通过」笼统覆盖三平台；
+  - 文档必须显式写明「Linux / macOS 未验证」，并给出验证途径（GitHub Actions 的 `ubuntu-latest` / `macos-latest`）；
+  - 某平台真正编过一次之后，才可以把对应段落的「待验证」改成「已验证」，并附上产物的版本输出。
+- **附带认知**：PuTTY **没有原生 macOS（Cocoa）界面**，macOS 上走 GTK3 + X11，需 XQuartz；编出来的是 X11 应用，不是原生 Mac App。写文档时不要暗示有原生 Mac 版。
+- **状态**：已知未验证（2026-10-26 确认本机三条验证途径全部不可用）
+- **记录日期**：2026-10-26
+
 
 ---
 
@@ -285,3 +301,5 @@
 | O-002 | GTK2 与 GTK3 构建差异 | 0.85 下 `unix/CMakeLists.txt` 对两种版本分支不同，需实测 |
 | O-003 | 测试套件如何运行 | `test/` 下有 35 个 Python 脚本，依赖 `testcrypt` 可执行文件，具体入口待确认 |
 | O-004 | MSVC 与 MinGW 产物差异 | 是否影响后续分发 |
+| O-005 | **Linux 构建能否通过** | 在 `ubuntu-latest` 上执行 README 第 3 节命令，确认 `libgtk-3-dev` / `libx11-dev` 是否够用、报错点在哪（见 P-021） |
+| O-006 | **macOS 构建能否通过** | 在 `macos-latest` 上 `brew install gtk+3` 是否足够，XQuartz 是否为运行必需，产物是否只能作为 X11 应用（见 P-021） |

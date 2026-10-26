@@ -17,7 +17,7 @@
 | **[如何编译](#如何编译)**（本文下一节） | 环境准备、Windows/Linux/macOS 构建命令、编译成功验证、三个致命坑 | **只想把代码编出来 → 看这节就够** |
 | [AGENTS.md](AGENTS.md) | 智能体/协作者入职须知：项目现状、目录地图、**提交规范**、禁止事项 | **动手改代码前必读** |
 | [BUILD.md](BUILD.md) | 编译详解：完整选项表、产物清单、逐条排错对照、实测记录 | 上面那节不够用时 |
-| [PITFALLS.md](PITFALLS.md) | 误点避坑清单：20 条已知坑 + 待观察项 | **动手前扫一遍**，省几小时 |
+| [PITFALLS.md](PITFALLS.md) | 误点避坑清单：21 条已知坑 + 待观察项 | **动手前扫一遍**，省几小时 |
 | [DEVLOG.md](DEVLOG.md) | 二次开发日志：每次改动的时间线、提交 hash、遗留问题 | 想知道「现在到哪一步了」 |
 
 > 核心约定：**一次任务 = 一次 commit = 一次推送**；踩到新坑必须录入 `PITFALLS.md`。
@@ -78,6 +78,8 @@ cmake --build ..\putty-build -- -j 1
 
 ### 3. Linux
 
+> ⚠️ **本节命令尚未实测**（开发机为 Windows 且 WSL 被安全策略禁用，原因见 [P-021](PITFALLS.md)）。按上游 CMake 结构推导，失败请把报错补进 `PITFALLS.md`。
+
 ```bash
 # Debian / Ubuntu
 sudo apt install build-essential cmake pkg-config libgtk-3-dev libx11-dev
@@ -92,6 +94,8 @@ sudo cmake --build ../putty-build --target install   # 可选：安装
 > Unix 上若希望 `pterm` 能记录登录信息（写 `/var/run/utmp`、`/var/log/wtmp`），需手动为其设置 setuid/setgid 权限，CMake 安装步骤不会自动处理。
 
 ### 4. macOS
+
+> ⚠️ **本节命令尚未实测**（原因同 §3 / P-021）。另注意：PuTTY **没有原生 macOS 界面**，此处走 GTK3 + X11，运行需安装 [XQuartz](https://www.xquartz.org/)，产物是 X11 应用而非原生 Mac App。
 
 ```bash
 xcode-select --install
@@ -180,7 +184,7 @@ PuTTY 是一款免费、开源的 SSH / Telnet 客户端，最初由 Simon Tatha
 | 语言 | C（450 个 `.c` / 89 个 `.h`） |
 | 许可证 | MIT（见 `LICENCE`） |
 | 构建系统 | CMake（≥ 3.7），C99 |
-| 构建状态 | **Windows ✅ 已验证**（VS 18 / MSVC 19.51 + CMake 4.3，467 步全通过）｜Linux / macOS 待验证 |
+| 构建状态 | **Windows ✅ 已验证**（VS 18 / MSVC 19.51 + CMake 4.3，467 步全通过）｜**Linux / macOS ⚠️ 未验证**，命令按上游 CMake 结构推导，原因见 [P-021](PITFALLS.md) |
 | 上游地址 | <https://git.tartarus.org/simon/putty.git> |
 | 官方网站 | <https://www.chiark.greenend.org.uk/~sgtatham/putty/> |
 | 官方文档 | <https://the.earth.li/~sgtatham/putty/latest/htmldoc/> |
