@@ -1,0 +1,200 @@
+# PITFALLS.md — 误点避坑清单
+
+> **动手前必扫一遍。** 这里是本项目已知的坑，无论是环境、Git 操作、构建还是选型。
+>
+> 规则：**同一个坑踩第二次，先修文档再修代码。**
+
+---
+
+## 使用说明
+
+每条记录包含五个字段：
+
+| 字段 | 含义 |
+|------|------|
+| **现象** | 你看到什么（报错、异常行为） |
+| **原因** | 为什么会这样 |
+| **解法** | 怎么绕过或修掉 |
+| **状态** | `已验证`（本仓库实际发生过）／`待验证`（来自官方文档或经验，未在本机复现） |
+| **记录日期** | 首次记录时间 |
+
+新增条目：编号顺延，不要复用已删除的编号。
+
+---
+
+## 一、Git 与仓库操作
+
+### P-001 提交时大量 `LF will be replaced by CRLF` 警告
+
+- **现象**：`git add` 时刷屏输出 `warning: in the working copy of 'xxx.c', LF will be replaced by CRLF the next time Git touches it`。
+- **原因**：本机 `core.autocrlf=true`，Git 入库时把 CRLF 转成 LF、检出时再转回 CRLF。PuTTY 源码里混有 LF，所以每个文件都会告警。
+- **影响**：不影响编译，但**与上游做 diff / 打 patch 时会产生「整文件全变」的假差异**，看不出真实改动。
+- **解法**：
+  - 对比上游时用 `git diff --ignore-cr-at-eol` 或 `git diff -w`；
+  - 需要长期与上游同步，可考虑 `git config core.autocrlf input`；
+  - **不要**盲目新增 `.gitattributes`（如 `* text=auto`），会触发全仓库一次性重写，产生巨大无意义 diff。
+- **状态**：已验证（本仓库多次出现）
+- **记录日期**：2026-10-26
+
+### P-002 源码包 722 个文件，仓库只有 710 个 —— 不是丢文件
+
+- **现象**：`find . -type f` 数出 722 个，`git ls-files` 只有 710 个，差额 12 个。
+- **原因**：差额是 `doc/putty.1`、`doc/putty.chm`、`doc/puttydoc.txt` 等**编译生成的文档产物**，被 PuTTY 自带的 `.gitignore` 排除，属正常。
+- **影响**：容易误判为「导入不全」，浪费时间重新下载。
+- **解法**：用 `git status --ignored --short` 确认被忽略清单；文档源文件在 `doc/*.but`，不缺失。
+- **状态**：已验证
+- **记录日期**：2026-10-26
+
+### P-003 远程仓库已有初始提交时，直接 push 会被拒
+
+- **现象**：`! [rejected] main -> main (fetch first)` 或 `non-fast-forward`。
+- **原因**：远程已有 commit（本仓库初始时有一个只含 7 字节 `README.md` 的提交），本地历史与之无关联。
+- **解法**：
+  ```bash
+  git fetch origin
+  git merge --allow-unrelated-histories origin/main
+  git push origin main
+  ```
+  **不要**用 `push --force` 图省事——会抹掉远程已有内容。
+- **状态**：已验证
+- **记录日期**：2026-10-26
+
+### P-004 没有 `gh` CLI，无法命令行建 PR / 管 Issue
+
+- **现象**：`gh: command not found`。
+- **原因**：开发机未安装 GitHub CLI。
+- **影响**：只能用 `git push` 推代码；PR、Issue、Release 需在网页操作。
+- **解法**：安装 `gh` 并 `gh auth login`；或在 GitHub 网页操作。
+- **状态**：已验证
+- **记录日期**：2026-10-26
+
+### P-005 `putty.org` 不是 PuTTY 官网
+
+- **现象**：搜索「PuTTY 官网」首先出现 `putty.org`，页面夹杂 Bitvise 产品推荐。
+- **原因**：该域名已被商业公司 **Bitvise** 收购并重新利用，页面上的 PuTTY 下载链接只是导流。
+- **影响**：可能下载到非官方构建，或引用错误的技术资料。
+- **解法**：官方站点是 `https://www.chiark.greenend.org.uk/~sgtatham/putty/`；源码用 `https://git.tartarus.org/simon/putty.git`；下载用 `https://the.earth.li/~sgtatham/putty/latest/`。
+- **状态**：已验证（2026-10 核实）
+- **记录日期**：2026-10-26
+
+### P-015 本地工作目录可能被外部删除，改动务必及时提交
+
+- **现象**：2026-10-26 20:08 前后，本地 `C:\Users\Administrator\Desktop\putty-0.85` 目录在未执行任何删除命令的情况下消失，磁盘与回收站均无法找到（未提交的 `PITFALLS.md` 因此丢失，已重写）。
+- **原因**：未确定。疑为清理工具、杀毒隔离或人为误删。
+- **影响**：**未提交的改动会直接丢失**。
+- **解法**：
+  - **改完立刻 commit 并 push**，不要攒着；
+  - 目录丢失时用 `git clone https://github.com/xsenrain/Putty putty-0.85` 即可完整恢复（历史、分支、标签都在远程）；
+  - 原始源码包 `C:\Users\Administrator\Downloads\putty-0.85.tar.gz` 可作二次兜底。
+- **状态**：已验证（本仓库实际发生）
+- **记录日期**：2026-10-26
+
+---
+
+## 二、选型阶段已排除的坑（避免重复调研）
+
+> 这几条来自前期「找 C/C++ SSH 成品项目做二开底座」的调研结论，**不要重复走弯路**。
+
+### P-006 WindTerm 是「半开源」，不能二开
+
+- **现象**：WindTerm（32K+ star）功能强、性能好，仓库标 Apache-2.0，看起来很适合当底座。
+- **原因**：官方 README 明确写 *"WindTerm is a **partial open source** project, and the source will be **gradually opened**"*。仓库仅含零散工具类，**SSH 协议栈、终端仿真、UI 主体均未放出**，无法完整构建。
+- **影响**：fork 后改不了核心、编不出产品。
+- **解法**：**只用不改**可以，**二开不要选**。二开选 PuTTY（MIT 全开源）。
+- **状态**：已验证（查证官方 README 与仓库内容）
+- **记录日期**：2026-10-26
+
+### P-007 KiTTY 基线停在 PuTTY 0.76（2021），不适合当底座
+
+- **现象**：KiTTY 是 PuTTY 的增强分支，功能比原版多，看起来很合适。
+- **原因**：其基线长期停留在 PuTTY **0.76**，后续上游 0.77→0.85 的安全修复与算法更新均未跟进；正式版本更新缓慢（近年停滞）。
+- **影响**：以它为起点，等于从 2021 年的代码起步，安全补丁要自己补。
+- **解法**：直接用 PuTTY 0.85 做底座，需要 KiTTY 的某些特性时**按需移植单个特性**，不要整体 fork。
+- **状态**：已验证
+- **记录日期**：2026-10-26
+
+### P-008 做二开应基于开发快照，而非 release 源码包
+
+- **现象**：用 release 包（如本次的 0.85 包）起步。
+- **原因**：PuTTY 官方 README 说明——正式发布后会对代码做大范围改动，基于 release 的改动**难以合并回上游**；官方建议基于开发快照（snapshot）开发。
+- **影响**：后续想同步上游会非常痛苦。
+- **解法**：若计划长期跟进上游，从 `git clone https://git.tartarus.org/simon/putty.git` 起步，或用 snapshot；纯内部产品/不打算回馈上游则用 release 包也可以（本仓库即此定位）。
+- **状态**：待验证（结论来自官方 README，未在本机实测合并成本）
+- **记录日期**：2026-10-26
+
+---
+
+## 三、构建相关
+
+### P-009 文档产物需要 Halibut 生成，源文件是 `.but`
+
+- **现象**：仓库里没有 `putty.chm`、`*.1`、`puttydoc.txt`；改了 `doc/*.but` 却看不到效果。
+- **原因**：这些是 Halibut 从 `.but` 源文件编译出的产物，且被 `.gitignore` 排除。
+- **影响**：误以为文档缺失；或改完文档无法验证。
+- **解法**：安装 Halibut（`https://www.chiark.greenend.org.uk/~sgtatham/halibut/`）后构建 `doc` 目标。
+- **状态**：待验证（需实际构建后确认目标名与行为）
+- **记录日期**：2026-10-26
+
+### P-010 Unix 下 `pterm` 需要 setuid/setgid 才能记录登录信息
+
+- **现象**：`pterm` 能用，但 `/var/run/utmp`、`/var/log/wtmp` 里没有登录记录。
+- **原因**：写登录记录需要特权；CMake 的 install 步骤**不会**自动加权限。
+- **影响**：`who` / `last` 查不到 pterm 登录会话。
+- **解法**：安装后手动 `chown` / `chgrp` / `chmod` 该二进制（参考源码根目录 `README`）。
+- **状态**：待验证（来自官方 README）
+- **记录日期**：2026-10-26
+
+### P-011 构建工具链缺失时不要下「编译通过」结论
+
+- **现象**：`cmake --version`、`gcc --version`、`cl` 均 `command not found`。
+- **原因**：开发机未安装 CMake 与 C 编译器（或未加入 PATH）。
+- **影响**：**任何未经编译的改动都可能有语法错误**，不能声称「已通过」。
+- **解法**：先按 `BUILD.md` 装工具链；无法安装时，在 commit 信息与 `DEVLOG.md` 中**明确写「未编译验证」**。
+- **状态**：已验证
+- **记录日期**：2026-10-26
+
+---
+
+## 四、代码改动规范（避免结构性错误）
+
+### P-012 平台相关代码放错目录会导致跨平台构建失败
+
+- **现象**：在 Linux 上编译通过，Windows 构建报找不到 `windows.h`；或反之。
+- **原因**：PuTTY 用目录隔离平台代码：`windows/`（Win32）、`unix/`（GTK/POSIX），共享逻辑在顶层与 `terminal/`、`ssh/`、`utils/`。
+- **影响**：一个平台的改动直接破坏另一个平台的构建。
+- **解法**：平台相关 API 只写在对应目录；共享层通过 `putty.h` 中的抽象接口（如 `Backend`、`Terminal`、`Seat`）调用。
+- **状态**：待验证（结构事实已确认，未实测编译）
+- **记录日期**：2026-10-26
+
+### P-013 不要改动 `LICENCE` 与版权声明
+
+- **现象**：想「清理」或「换成自己的许可证」。
+- **原因**：PuTTY 为 MIT 许可，**必须保留原版权声明与许可声明**，否则构成许可违约。
+- **影响**：法律风险，且会让整个仓库的合规性失效。
+- **解法**：保留 `LICENCE` 原文；如需声明自己的修改，另加 `NOTICE` 或在 README 中说明「基于 PuTTY 0.85，遵循 MIT」。
+- **状态**：已验证（MIT 条款要求）
+- **记录日期**：2026-10-26
+
+### P-014 构建产物与大文件不要入库
+
+- **现象**：`git status` 出现 `CMakeCache.txt`、`*.o`、`*.exe`、`build/`。
+- **原因**：本地执行过 CMake 或编译。
+- **影响**：仓库膨胀、diff 噪音、跨机器污染。
+- **解法**：确认 `.gitignore` 覆盖（本仓库已有 PuTTY 自带规则）；编译请在**源码目录之外**做 out-of-source 构建：
+  ```bash
+  cmake -S . -B ../putty-build
+  cmake --build ../putty-build
+  ```
+- **状态**：待验证（未实际编译，建议沿用 out-of-source）
+- **记录日期**：2026-10-26
+
+---
+
+## 待观察清单（尚无定论，不要当结论用）
+
+| 编号 | 事项 | 待确认什么 |
+|------|------|-----------|
+| O-001 | 行尾符是否需统一为 LF | 与上游 patch 的实际冲突率；决定是否引入 `.gitattributes` |
+| O-002 | GTK2 与 GTK3 构建差异 | 0.85 下 `unix/CMakeLists.txt` 对两种版本分支不同，需实测 |
+| O-003 | 测试套件如何运行 | `test/` 下有 35 个 Python 脚本，依赖 `testcrypt` 可执行文件，具体入口待确认 |
+| O-004 | MSVC 与 MinGW 产物差异 | 是否影响后续分发 |
