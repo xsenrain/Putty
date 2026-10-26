@@ -2,7 +2,7 @@
 
 > 本文档说明如何从源码构建 PuTTY 0.85。所有命令均已对照本仓库的 `CMakeLists.txt`、`cmake/*.cmake`、`windows/`、`unix/` 构建脚本核实。
 >
-> **诚实声明**：本仓库**尚未完成一次完整编译**（只完成了 CMake 配置阶段的验证，见文末「实测记录」）。文中标注 `✅ 已核实` 的是从构建脚本读出的确定事实；标注 `⚠️ 待验证` 的需要你实际跑一遍确认。
+> **验证状态**：**Windows 构建路径已实测通过**（2026-10-26，VS 18 + CMake 4.3，467/467 步，产物经 `plink -V` 验证为 `Release 0.85`）。Linux / macOS 路径尚未在本机实测，标注 `⚠️ 待验证`。文中标注 `✅ 已核实` 的是从构建脚本读出的确定事实。
 
 ---
 
@@ -35,42 +35,58 @@ cmake --build ../putty-build
 
 ## 3. Windows 构建
 
-### 3.1 方式 A：Ninja + MSVC（推荐）
+### 3.0 一键脚本（已验证 ✅）
 
-使用 **x64 Native Tools Command Prompt for VS**（开始菜单搜索即可），或用 `vcvars64.bat` 初始化环境：
+仓库自带脚本 `contrib/build-windows-msvc.bat`，**已在 VS 18 + CMake 4.3 上完整编译通过（467 步，0 报错）**：
+
+```bat
+contrib\build-windows-msvc.bat              :: 默认输出到 ..\putty-build
+contrib\build-windows-msvc.bat D:\my-build  :: 指定输出目录
+```
+
+脚本做了四件手工容易漏的事：定位 VS → 定位 Windows SDK → 注入 `PATH/INCLUDE/LIB` → 用 Ninja 而非 VS 生成器。
+
+### 3.1 手工步骤（等价于脚本）
+
+在 **x64 Native Tools Command Prompt for VS** 中执行：
 
 ```bat
 call "C:\Program Files\Microsoft Visual Studio\18\Community\VC\Auxiliary\Build\vcvars64.bat"
-cmake -S . -B ..\putty-build -G Ninja -DCMAKE_BUILD_TYPE=Release
-cmake --build ..\putty-build
+
+:: 关键：给 rc.exe / mt.exe / kernel32.lib 补上 SDK 路径
+set KITS=C:\Program Files (x86)\Windows Kits\10
+set SDKVER=10.0.26100.0
+set PATH=%KITS%\bin\%SDKVER%\x64;%PATH%
+set INCLUDE=%KITS%\Include\%SDKVER%\um;%KITS%\Include\%SDKVER%\ucrt;%KITS%\Include\%SDKVER%\shared;%INCLUDE%
+set LIB=%KITS%\Lib\%SDKVER%\um\x64;%KITS%\Lib\%SDKVER%\ucrt\x64;%LIB%
+
+cmake -S . -B ..\putty-build -G Ninja -DCMAKE_BUILD_TYPE=Release ^
+      -DCMAKE_RC_COMPILER="C:/Program Files (x86)/Windows Kits/10/bin/10.0.26100.0/x64/rc.exe" ^
+      -DCMAKE_MT="C:/Program Files (x86)/Windows Kits/10/bin/10.0.26100.0/x64/mt.exe"
+
+cmake --build ..\putty-build -- -j 1
 ```
 
-产物：`..\putty-build\putty.exe`、`pscp.exe`、`psftp.exe`、`plink.exe`、`puttygen.exe`、`pageant.exe` ✅ 已核实目标名（见 `CMakeLists.txt`）
+> 两个细节别踩：`CMAKE_RC_COMPILER` 必须用**正斜杠**（反斜杠会被 CMake 写成非法转义，见 P-018）；构建加 `-j 1`（并行 Ninja 偶发卡死，见 P-019）。
 
-### 3.2 方式 B：Visual Studio 生成器
+### 3.2 为什么不用 VS 生成器
 
-```bat
-cmake -S . -B ..\putty-build -G "Visual Studio 17 2022" -A x64
-cmake --build ..\putty-build --config Release
+```
+cmake -S . -B build -G "Visual Studio 18 2026"
+→ The C compiler identification is unknown
+   No CMAKE_C_COMPILER could be found.
 ```
 
-⚠️ **本机实测问题**：使用 `-G "Visual Studio 18 2026"` 时，CMake 报
-```
--- The C compiler identification is unknown
-CMake Error at CMakeLists.txt:2 (project): No CMAKE_C_COMPILER could be found.
-```
-即 VS 18 的 C++ 工具集未注册给 CMake。**改用方式 A（Ninja + vcvars64）可绕开**。详见第 7 节排错。
+VS 18 的工具集未注册给 CMake 4.x 的 VS 生成器。改用 `-G "Visual Studio 17 2022"` 或上面的 Ninja 方式（见 P-016）。
 
 ### 3.3 MinGW 交叉编译（可选）
-
-需要 MinGW-w64 工具链，把 `gcc` 放到 PATH 后：
 
 ```bash
 cmake -S . -B ../putty-build-mingw -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release
 cmake --build ../putty-build-mingw
 ```
 
-⚠️ 待验证：MinGW 下部分 Windows API（如 `-municode`、资源文件）可能需要额外参数。
+⚠️ 待验证：MinGW 下资源文件与 `-municode` 可能需要额外参数。
 
 ---
 
@@ -154,10 +170,13 @@ cmake -S . -B ../putty-build-debug -DCMAKE_BUILD_TYPE=Debug -DPUTTY_DEBUG=ON -DP
 | 报错 | 原因 | 解法 |
 |------|------|------|
 | `No CMAKE_C_COMPILER could be found` | 生成器找不到编译器（VS 18 + CMake 4.x 实测出现） | 改用 Ninja + `vcvars64.bat`；或换 `-G "Visual Studio 17 2022"` |
+| `RC Pass 1 ... failed / no such file or directory` | `rc.exe` 不在 PATH（vcvars 查不到 SDK） | 手动把 SDK `bin\<ver>\x64` 加入 PATH（P-017） |
+| `LNK1104: 无法打开文件"kernel32.lib"` | `LIB` 环境变量缺 SDK 的 `Lib` 路径 | 手动补 `LIB` 与 `INCLUDE`（P-017） |
+| `Invalid character escape '\P'` 于 `CMakeRCCompiler.cmake` | `CMAKE_RC_COMPILER` 传了反斜杠路径 | 改用正斜杠 `C:/.../rc.exe`（P-018） |
+| 构建长时间停在某一步，`cl.exe` 空转无产物 | 并行 Ninja 偶发卡死 | 杀掉后 `cmake --build <dir> -- -j 1` 增量重跑（P-019） |
 | `Could NOT find PkgConfig` | 缺 pkg-config | `apt install pkg-config` / `brew install pkg-config` |
 | `Checking for module 'gtk+-3.0'... not found` | 没装 GTK3 开发包 | 装 `libgtk-3-dev`，或用 `-DPUTTY_GTK_VERSION=NONE` 跳过 GUI |
 | `undefined reference to XCreateWindow` 之类 | 缺 X11 开发包 | `apt install libx11-dev libxrender-dev` |
-| `cmake_minimum_required` 版本策略错误 | CMake 4.x 对 < 3.5 的项目报错（本项目 3.7 不受影响） | 确认 CMake ≥ 3.7 |
 | 构建目录里出现 `CMakeCache.txt` 被 `git status` 捕获 | 在源码目录内做了 in-source 构建 | 删除该文件，改用 `-B ../putty-build` |
 | 改了 `doc/*.but` 但文档没变 | 生成文档需要 Halibut | 安装 Halibut 后构建 `doc` 目标 |
 
@@ -203,6 +222,30 @@ cmake --build ../putty-build --target doc
 
 | 日期 | 环境 | 结果 |
 |------|------|------|
-| 2026-10-26 | Windows 11 + VS 18 Community（MSVC 14.51）+ CMake 4.3.1-msvc1 | `-G "Visual Studio 18 2026"` 配置失败：`No CMAKE_C_COMPILER could be found`。**尚未完成完整编译** |
+| 2026-10-26 20:22 | Windows 11 + VS 18 Community（MSVC 14.51）+ CMake 4.3.1-msvc1 | ❌ `-G "Visual Studio 18 2026"` → `No CMAKE_C_COMPILER could be found` |
+| 2026-10-26 20:30 | 同上，改 Ninja | ⚠️ 编译到 456/467 时 `cl.exe` 空转卡死（疑似安全软件干扰） |
+| 2026-10-26 20:38 | 同上，`-j 1` 增量重跑 | ✅ **成功**：14 步补完，产出全部二进制 |
+| 2026-10-26 20:45 | `contrib/build-windows-msvc.bat` 从零构建 | ✅ **成功**：467/467 步，0 报错 |
+
+### 产物验证（2026-10-26）
+
+```
+$ plink.exe -V
+plink: Release 0.85
+Build platform: 64-bit x86 Windows
+Compiler: Visual Studio, _MSC_VER=1951, _MSC_FULL_VER=195136257
+Source commit: <构建时的 HEAD>
+```
+
+| 产物 | 大小 | 状态 |
+|------|------|------|
+| `putty.exe` | 1.1 MB | ✅ |
+| `plink.exe` | 765 KB | ✅ 版本号验证通过 |
+| `pscp.exe` | 770 KB | ✅ |
+| `psftp.exe` | 779 KB | ✅ |
+| `puttygen.exe` | 400 KB | ✅ |
+| `pageant.exe` | 374 KB | ✅ |
+| `puttytel.exe` | 505 KB | ✅ |
+| `pterm.exe` | 433 KB | ✅ |
 
 > 完成一次成功编译后，请在此表追加一行，并在 `DEVLOG.md` 记录产物验证情况（能启动、能连接、版本号正确）。
