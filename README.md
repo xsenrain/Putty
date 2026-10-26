@@ -8,6 +8,21 @@
 
 ---
 
+## 文档导航
+
+**首次接触本仓库，请按此顺序阅读：**
+
+| 文档 | 内容 | 什么时候看 |
+|------|------|-----------|
+| [AGENTS.md](AGENTS.md) | 智能体/协作者入职须知：项目现状、目录地图、**提交规范**、禁止事项 | **动手改代码前必读** |
+| [BUILD.md](BUILD.md) | 编译指南：Windows / Linux / macOS 构建步骤、CMake 选项、排错表 | 要把代码编出来时 |
+| [PITFALLS.md](PITFALLS.md) | 误点避坑清单：15 条已知坑 + 待观察项 | **动手前扫一遍**，省几小时 |
+| [DEVLOG.md](DEVLOG.md) | 二次开发日志：每次改动的时间线、提交 hash、遗留问题 | 想知道「现在到哪一步了」 |
+
+> 核心约定：**一次任务 = 一次 commit = 一次推送**；踩到新坑必须录入 `PITFALLS.md`。
+
+---
+
 ## 项目简介
 
 PuTTY 是一款免费、开源的 SSH / Telnet 客户端，最初由 Simon Tatham 为 Windows 平台开发，现已成为跨平台的经典实现。项目采用 **C 语言**编写，自 1997 年持续维护至今，经过长期的安全审计与生产环境验证，是学习 SSH 协议实现与终端仿真的优秀范本。
@@ -82,43 +97,96 @@ PuTTY 是一款免费、开源的 SSH / Telnet 客户端，最初由 Simon Tatha
 
 ---
 
-## 从源码构建
+## 编译帮助
 
-PuTTY 使用 **CMake** 构建，支持 Linux、Windows、macOS。
+> 本节为速查版。完整说明（选项表、产物清单、排错对照表、实测记录）见 **[BUILD.md](BUILD.md)**。
 
-### 通用步骤
+### 前置条件
+
+| 项 | 要求 |
+|----|------|
+| CMake | **≥ 3.7**（`CMakeLists.txt` 声明 `3.7...3.28`） |
+| C 标准 | **C99** |
+| 编译器 | Windows：MSVC 2019+ 或 MinGW-w64；Linux/macOS：gcc / clang |
+| GTK | **可选**（仅 Unix GUI 需要；缺失时只构建命令行工具） |
+| Halibut | 可选（仅生成文档需要） |
+
+Windows 构建**无需任何外部第三方库**，加密与压缩均为自带实现。
+
+### 快速开始
 
 ```bash
-cmake .
-cmake --build .
+cmake -S . -B ../putty-build
+cmake --build ../putty-build
 ```
 
-### Windows（MSVC）
+推荐 **out-of-source** 构建（产物生成在源码目录之外），避免构建产物污染仓库。
 
-先加载 MSVC 环境（让 `cl.exe` 出现在 PATH 中），例如在 “x64 Native Tools Command Prompt” 中执行：
+### Windows（MSVC，推荐 Ninja）
+
+在 **x64 Native Tools Command Prompt for VS** 中执行：
 
 ```bat
-vcvars64.bat
-cmake .
-cmake --build . --config Release
+call vcvars64.bat
+cmake -S . -B ..\putty-build -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build ..\putty-build
 ```
 
-### Linux / macOS
+产物：`..\putty-build\putty.exe`、`pscp.exe`、`psftp.exe`、`plink.exe`、`puttygen.exe`、`pageant.exe`
+
+也可以直接用 VS 生成器，但**注意**：本机实测 `-G "Visual Studio 18 2026"` 会报 `No CMAKE_C_COMPILER could be found`（VS 18 工具集未注册给 CMake），此时请改用上面的 Ninja 方式，或换 `-G "Visual Studio 17 2022" -A x64`。
+
+### Linux
 
 ```bash
-cmake .
-cmake --build .
-sudo cmake --build . --target install   # 可选：安装
+# Debian / Ubuntu 依赖
+sudo apt install build-essential cmake pkg-config libgtk-3-dev libx11-dev
+
+cmake -S . -B ../putty-build -DCMAKE_BUILD_TYPE=Release
+cmake --build ../putty-build -j$(nproc)
+sudo cmake --build ../putty-build --target install   # 可选：安装
 ```
 
-> 在 Unix 上，若希望 `pterm` 能记录登录信息（写入 `/var/run/utmp`、`/var/log/wtmp`），需要手动为其设置 setuid/setgid 权限，CMake 安装步骤不会自动处理。
+服务器无 GTK 时，加 `-DPUTTY_GTK_VERSION=NONE`，仅构建 `plink` / `pscp` / `psftp` 等命令行工具。
+
+> Unix 上若希望 `pterm` 能记录登录信息（写入 `/var/run/utmp`、`/var/log/wtmp`），需手动设置 setuid/setgid 权限，CMake 安装步骤不会自动处理。
+
+### macOS
+
+```bash
+xcode-select --install
+brew install cmake pkg-config gtk+3
+
+cmake -S . -B ../putty-build -DCMAKE_BUILD_TYPE=Release
+cmake --build ../putty-build -j$(sysctl -n hw.ncpu)
+```
+
+### 常用 CMake 选项
+
+| 选项 | 默认 | 说明 |
+|------|------|------|
+| `PUTTY_GTK_VERSION` | `ANY` | `ANY` / `3` / `2` / `1` / `NONE`，`NONE` 关闭 GTK GUI |
+| `PUTTY_IPV6` | `ON` | IPv6 支持 |
+| `PUTTY_DEBUG` | `OFF` | 调试构建 |
+| `PUTTY_FUZZING` | `OFF` | fuzzing 目标 |
+| `PUTTY_COVERAGE` | `OFF` | 覆盖率插桩 |
+| `PUTTY_COMPRESS_SCROLLBACK` | `ON` | 回滚缓冲压缩 |
+
+### 常见错误
+
+| 报错 | 解法 |
+|------|------|
+| `No CMAKE_C_COMPILER could be found` | 改用 Ninja + `vcvars64.bat`，或换 VS 2022 生成器 |
+| `Could NOT find PkgConfig` | 装 `pkg-config` |
+| `gtk+-3.0 not found` | 装 `libgtk-3-dev`，或加 `-DPUTTY_GTK_VERSION=NONE` |
+| `CMakeCache.txt` 出现在 `git status` | 你做了 in-source 构建，删掉并改用 `-B ../putty-build` |
 
 ### 构建文档（可选）
 
-文档由 `doc/` 下的 Halibut（`.but`）源文件生成，需要先安装 [Halibut](https://www.chiark.greenend.org.uk/~sgtatham/halibut/)：
+文档由 `doc/` 下的 Halibut（`.but`）源文件生成，需先安装 [Halibut](https://www.chiark.greenend.org.uk/~sgtatham/halibut/)：
 
 ```bash
-cmake --build . --target doc
+cmake --build ../putty-build --target doc
 ```
 
 ---
