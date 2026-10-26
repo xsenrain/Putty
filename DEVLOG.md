@@ -82,4 +82,65 @@
 
 ---
 
+## 2026-10-26 建立长期记忆与协作文档体系
+
+### 目标
+
+让**任何智能体或新协作者首次进入仓库时，无需口头交接即可接手**：知道项目是什么、到哪一步了、改动守什么规矩、哪里有坑、怎么编译。
+
+### 完成事项
+
+| 时间 | 事项 | 提交 |
+|------|------|------|
+| 20:05 | 新增 `AGENTS.md`：入职须知（必读顺序、现状、目录地图、一任务一提交规范、禁止事项、上下文获取优先级、交接模板） | `5708bd3` |
+| 20:08 | 新增 `PITFALLS.md`：避坑清单（Git 操作 / 选型排除 / 构建 / 代码规范四类） | `1c099f5` |
+| 20:12 | 新增 `BUILD.md`：编译指南（前置条件、三平台步骤、CMake 选项表、产物清单、排错表、实测记录） | `6282f8a` |
+| 20:12 | `README.md` 增加「文档导航」与「编译帮助」速查章节 | `49c735a` |
+| 20:13 | `PITFALLS.md` 修正 P-011、新增 P-016（VS18 + CMake 4 生成器报错） | `4290816` |
+| 20:14 | 本条日志 | 本条提交 |
+
+### 文档体系设计思路
+
+四份文档职责互斥，避免信息重复维护：
+
+- `README.md` —— **对外**：项目是什么、有什么、怎么编（速查）
+- `AGENTS.md` —— **对协作者**：规矩与流程（怎么提交、禁什么）
+- `PITFALLS.md` —— **对执行**：具体坑与解法（现象→原因→解法）
+- `DEVLOG.md` —— **对时间**：发生了什么、为什么这么决定（本条）
+
+### 事故记录：本地目录丢失
+
+- **时间**：2026-10-26 约 20:08（写入 `PITFALLS.md` 之后、提交之前）
+- **现象**：`C:\Users\Administrator\Desktop\putty-0.85` 整目录消失，磁盘与回收站均未找到；未提交的 `PITFALLS.md` 丢失
+- **恢复**：`git clone https://github.com/xsenrain/Putty putty-0.85` 完整恢复（历史、文件全部在远程）；丢失的 `PITFALLS.md` 依据上下文重写
+- **后续**：用户自行恢复了原始源码目录（无 `.git`），用 `git init` + `git remote add` + `git fetch` + `git reset origin/main` + `git checkout -- .` 重新挂接，最终与远程**完全一致（714 文件，工作区干净）**
+- **教训**：已录入 `PITFALLS.md` P-015 —— **改动必须立即提交推送，不要攒批**
+
+### 工具链探查（重要修正）
+
+之前判断「本机无 CMake / 无编译器」**是错的**，实际环境：
+
+| 组件 | 实际情况 |
+|------|---------|
+| Visual Studio | VS 18 Community 已安装，MSVC **14.51.36231** |
+| CMake | VS 自带 **4.3.1-msvc1**（在 `Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\`） |
+| Ninja | VS 自带（同目录 `Ninja\ninja.exe`） |
+| `D:\CMake` | **空壳目录**，`bin` 下只有一个 `.rbf` 文件，不可用 |
+| Git Bash 的 PATH | 上述工具均不在 PATH，需 `vcvars64.bat` 注入 |
+
+### 编译验证进展
+
+- 已执行：`cmake -S . -B <workspace>/putty-build`，默认选中 `Visual Studio 18 2026` 生成器
+- 结果：**失败** —— `The C compiler identification is unknown` / `No CMAKE_C_COMPILER could be found`
+- 结论：VS 18 工具集未注册给 CMake 4.x 的 VS 生成器，应改用 **Ninja + vcvars64**（已写入 `BUILD.md` 第 3.1 节与 `PITFALLS.md` P-016）
+- **完整编译仍未完成**，构建产物尚未产生
+
+### 遗留问题（更新）
+
+1. **完整编译未验证** —— 下一步用 Ninja + vcvars64 实际编译一次，成功后回填 `BUILD.md` 第 11 节
+2. 未建立 `dev` 分支，未打 `upstream-0.85` 标签
+3. 测试套件入口未确认（`test/` 下 35 个 Python 脚本，依赖 `testcrypt`）
+4. 二次开发方向仍未确定
+
 <!-- 新增日志请从下方追加，保持时间倒序或正序一致即可 -->
+
